@@ -4,32 +4,66 @@
 Running `:checkhealth` or `:LazyHealth` in neovim causes it to hang/freeze and eventually crash.
 
 ## Root Cause
-This is a known issue with **Neovim 0.11.5** when running inside **tmux** on macOS. The checkhealth command tries to render output to a buffer, but something in the terminal/tmux interaction causes it to hang indefinitely.
+The **vim.treesitter health check** hangs when trying to load treesitter parsers. Specifically at line 44 of `/opt/homebrew/Cellar/neovim/0.11.5_1/share/nvim/runtime/lua/vim/treesitter/health.lua` where it calls `ts.language.add(parser.name)` for each parser.
 
-The issue occurs even with `nvim --clean`, indicating it's not plugin-related but rather a core nvim + terminal compatibility issue.
+One of your installed parsers is causing neovim to hang when loading. This affects:
+- `:checkhealth` (with no arguments - tries to run ALL health checks including vim.treesitter)
+- `:LazyHealth` (also runs all checks)
+- `:checkhealth vim.treesitter`
+- `:checkhealth nvim-treesitter` (also hangs when checking queries)
+
+Other specific health checks work fine (`:checkhealth lazy`, `:checkhealth nvim`, `:checkhealth provider`, etc.)
+
+**This is NOT a configuration issue** - it's a bad/corrupted treesitter parser file.
 
 ## Workaround
 
-Use the provided bash wrapper script:
+**Option 1: Run specific health checks (RECOMMENDED)**
+```vim
+:checkhealth lazy
+:checkhealth nvim  
+:checkhealth provider
+:checkhealth vim.lsp
+" etc - just avoid vim.treesitter and nvim-treesitter
+```
 
+**Option 2: Disable treesitter health check temporarily**
+
+Add to your config:
+```lua
+-- Disable treesitter health check to prevent hangs
+vim.g.loaded_nvim_treesitter_health = 1
+```
+
+**Option 3: Use the bash wrapper script (works but slow)**
 ```bash
-# Run health check for all modules
-bash ~/.config/nvim/checkhealth.sh
-
-# Run health check for specific module
+# Run health check for specific module (excluding treesitter)
 bash ~/.config/nvim/checkhealth.sh lazy
 bash ~/.config/nvim/checkhealth.sh vim.lsp
-bash ~/.config/nvim/checkhealth.sh nvim-treesitter
 ```
 
 ## Permanent Solution
 
-One of these should fix the issue:
+**You need to identify and remove the corrupted parser:**
 
-1. **Wait for nvim update**: The issue may be fixed in a future neovim release
-2. **Downgrade neovim**: Try nvim 0.10.x if this is critical
-3. **Run outside tmux**: Exit tmux and run `:checkhealth` directly
-4. **Use headless mode**: `nvim --headless +"checkhealth lazy" +"w health.txt" +qa` (though this also hangs for you)
+1. **Method 1: Delete all parsers and reinstall** (RECOMMENDED)
+   ```bash
+   rm -rf ~/.local/share/nvim/site/parser/
+   nvim +"TSInstall bash lua vim" +qa
+   # Then gradually reinstall other parsers you need
+   ```
+
+2. **Method 2: Binary search to find the bad parser**
+   - Delete half the parsers from `~/.local/share/nvim/site/parser/`
+   - Test `:checkhealth vim.treesitter`
+   - Repeat until you find the problematic one
+
+3. **Method 3: Update everything**
+   ```vim
+   :Lazy update
+   :TSUpdate
+   ```
+   Then test if the issue is resolved.
 
 ## Technical Details
 

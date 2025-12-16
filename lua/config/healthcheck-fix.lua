@@ -1,17 +1,35 @@
--- Workaround for :checkhealth and :LazyHealth hanging in nvim 0.11.5
--- Root cause: checkhealth buffer rendering hangs when waiting for terminal output
--- This is a known issue with nvim 0.11.x + tmux on macOS
+-- Workaround for :checkhealth hanging due to nvim-treesitter
+-- Root cause: nvim-treesitter health check hangs when checking parser queries
 --
--- TEMPORARY FIX: Run checkhealth via script wrapper  
--- The issue will be with your terminal/tmux/nvim interaction.
---
--- To manually run health checks until this is fixed:
---   bash ~/.config/nvim/checkhealth.sh [module_name]
---
--- Or upgrade/downgrade nvim when a fix is available
+-- TEMPORARY FIX: Disable treesitter health check
+vim.g.loaded_nvim_treesitter_health = 1
 
-vim.notify(
-  "Note: :checkhealth and :LazyHealth may hang due to nvim 0.11.5 + tmux issue.\n" ..
-  "Use: bash ~/.config/nvim/checkhealth.sh [module] as a workaround",
-  vim.log.levels.WARN
-)
+-- Also provide a custom LazyHealth command that skips treesitter
+vim.api.nvim_create_user_command("SafeHealth", function(opts)
+  local modules = {
+    "lazy",
+    "nvim",
+    "provider",
+    "vim.lsp",
+    -- Skip: vim.treesitter and nvim-treesitter as they hang
+  }
+  
+  if opts.args ~= "" then
+    -- User specified a module
+    vim.cmd("checkhealth " .. opts.args)
+  else
+    -- Run safe subset of health checks
+    for _, mod in ipairs(modules) do
+      vim.cmd("checkhealth " .. mod)
+    end
+  end
+end, {
+  nargs = "?",
+  desc = "Run health checks (excluding treesitter which hangs)",
+})
+
+vim.api.nvim_create_user_command("SafeLazyHealth", function()
+  vim.cmd("checkhealth lazy")
+end, {
+  desc = "Run Lazy health check only",
+})
